@@ -1,74 +1,57 @@
 #include <SDL3/SDL.h>
 #include <stdio.h>
-#include <math.h>
-
-#define n 8
-#define conns 12
-
-typedef struct {float x, y, z;} vector3;
-
+#include "vector.h"
+#include "empty.h"
+#include "mesh.h"
 
 int main(int argc, char* argv[]) {
 
     SDL_Init(SDL_INIT_VIDEO);
 
-    int Win_Width = 640;
-    int Win_Height = 480;
+    int Win_Width = 1920;
+    int Win_Height = 1080;
 
-    SDL_Window* window = SDL_CreateWindow("3D Renderer", Win_Width, Win_Height, 0);
+    SDL_Window* window = SDL_CreateWindow("3D Renderer", Win_Width, Win_Height, SDL_WINDOW_FULLSCREEN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
 
-    vector3 points[n] = {
-        {-1.0f, 1.0f, 1.0f},
-        {1.0f, 1.0f, 1.0f},
-        {1.0f, -1.0f, 1.0f},
-        {-1.0f, -1.0f, 1.0f},
-        {-1.0f, 1.0f, -1.0f},
-        {1.0f, 1.0f, -1.0f},
-        {1.0f, -1.0f, -1.0f},
-        {-1.0f, -1.0f, -1.0f},
-    };
+    mesh cube = load_model(".\\assets\\weirdmesh.obj");
 
-    int connections[conns][2] = {
-        {0, 1}, {1, 2}, {2, 3}, {3, 0}, {0, 4}, {1, 5}, {2, 6}, {3, 7}, {4, 5}, {5, 6}, {6, 7}, {7, 4}
-    };
-
-    float FOV = 200.0f;
+    float FOV = 300.0f;
     vector3 camera = {0, 0, -5};
-
+    float speed = 0.0015f;
 
     int running = 1;
     SDL_Event event;
-
+    const bool* keys = SDL_GetKeyboardState(NULL);
 
     while (running) {
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) running = 0;
-            else if (event.type == SDL_EVENT_KEY_DOWN) {
-                switch (event.key.key) {
-                    case SDLK_ESCAPE: running = 0; break;
-                    case SDLK_W: camera.z += 0.2f; break; 
-                    case SDLK_S: camera.z -= 0.2f; break;
-                    case SDLK_A: camera.x -= 0.2f; break; 
-                    case SDLK_D: camera.x += 0.2f; break;
-                    case SDLK_UP: camera.y -= 0.2f; break;
-                    case SDLK_DOWN: camera.y += 0.2f; break;
-                }
-            }
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) running = 0;
         }
+
+        if (keys[SDL_SCANCODE_W]) camera.z += speed;
+        if (keys[SDL_SCANCODE_S]) camera.z -= speed;
+        
+        if (keys[SDL_SCANCODE_A]) camera.x -= speed;
+        if (keys[SDL_SCANCODE_D]) camera.x += speed;
+        
+        if (keys[SDL_SCANCODE_SPACE])   camera.y -= speed;
+        if (keys[SDL_SCANCODE_LSHIFT]) camera.y += speed;
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-        SDL_FPoint screen_points[n];
+        SDL_FPoint screen_points[cube.v_count];
+        float depths[cube.v_count];
 
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < cube.v_count; i++)
         {
-            float final_x = points[i].x - camera.x;
-            float final_y = points[i].y - camera.y;
-            float final_z = points[i].z - camera.z;
+            float final_x = cube.vertices[i].x - camera.x;
+            float final_y = cube.vertices[i].y - camera.y;
+            float final_z = cube.vertices[i].z - camera.z;
 
             if (final_z <= 0.1f) final_z = 0.1f;
 
@@ -77,14 +60,27 @@ int main(int argc, char* argv[]) {
 
             screen_points[i].x = screenx;
             screen_points[i].y = screeny;
+            depths[i] = final_z;
 
-            SDL_FRect rect = {screenx- 2, screeny - 2, 5, 5};
-            SDL_RenderFillRect(renderer, &rect);
+            if (cube.vertices[i].z > camera.z)
+            {SDL_FRect rect = {screenx- 2, screeny - 2, 5, 5};
+            SDL_RenderFillRect(renderer, &rect);}
         }
 
-        for (int i = 0; i < conns; i++)
+        for (int i = 0; i < cube.f_count; i++)
         {
-            SDL_RenderLine(renderer, screen_points[connections[i][0]].x, screen_points[connections[i][0]].y, screen_points[connections[i][1]].x, screen_points[connections[i][1]].y);
+            float x1 = screen_points[cube.faces[i].a].x;
+            float y1 = screen_points[cube.faces[i].a].y;
+
+            float x2 = screen_points[cube.faces[i].b].x;
+            float y2 = screen_points[cube.faces[i].b].y; 
+
+            float x3 = screen_points[cube.faces[i].c].x;
+            float y3 = screen_points[cube.faces[i].c].y; 
+            
+            SDL_RenderLine(renderer, x1, y1, x2, y2);
+            SDL_RenderLine(renderer, x2, y2, x3, y3);
+            SDL_RenderLine(renderer, x3, y3, x1, y1);
         }
         
 
