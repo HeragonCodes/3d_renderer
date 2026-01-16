@@ -15,8 +15,8 @@ you will need a C compiler (GCC, Clang, or MSVC) and the SDL3 library
 
 To run with Visual Studio:
 1.  Open the project in Visual Studio.
-2.  Download the SDL2 Development Libraries from [libsdl.org](https://www.libsdl.org/download-2.0.php).
-3.  Go to Project Properties > VC++ Directories and add the SDL2 `include` and `lib` paths.
+2.  Download SDL3 from the SDL3 Repo([https://www.libsdl.org/download-2.0.php](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.0)).
+3.  Go to Project Properties > VC++ Directories and add the SDL3 `include` and `lib` paths.
 4.  Copy `SDL3.dll` into the folder where your `.exe` is generated.
 5.  Build and Run.
 
