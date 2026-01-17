@@ -1,5 +1,6 @@
 #include <SDL3/SDL.h>
 #include <stdio.h>
+#include <math.h>
 #include "vector.h"
 #include "empty.h"
 #include "mesh.h"
@@ -8,17 +9,29 @@ int main(int argc, char* argv[]) {
 
     SDL_Init(SDL_INIT_VIDEO);
 
-    int Win_Width = 1920;
-    int Win_Height = 1080;
+    SDL_DisplayID primary = SDL_GetPrimaryDisplay();
+    const SDL_DisplayMode *mode = SDL_GetDesktopDisplayMode(primary);
+    int W = mode->w;
+    float w = W / 2.0f;
+    int H = mode->h;
+    float h = H / 2.0f;
 
-    SDL_Window* window = SDL_CreateWindow("3D Renderer", Win_Width, Win_Height, SDL_WINDOW_FULLSCREEN);
+    Uint64 LAST = 0;
+    Uint64 NOW = SDL_GetPerformanceCounter(); 
+    double deltaTime = 0;
+
+    SDL_Window* window = SDL_CreateWindow("3D Renderer", W, H, SDL_WINDOW_FULLSCREEN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
 
-    mesh cube = load_model(".\\assets\\weirdmesh.obj");
+    mesh model = load_model(".\\assets\\sphere.obj");
+    vector2 screen_points[model.v_count];
+    float depths[model.v_count];
 
     float FOV = 300.0f;
-    vector3 camera = {0, 0, -5};
-    float speed = 0.0015f;
+    empty camera = empty_init();
+    camera.pos = (vector3){0, 0, -5};
+    float camera_speed = 0.0015f;
+    float camera_rotation_speed = 0.001f;
 
     int running = 1;
     SDL_Event event;
@@ -26,63 +39,86 @@ int main(int argc, char* argv[]) {
 
     while (running) {
 
+        LAST = NOW;
+        NOW = SDL_GetPerformanceCounter();
+
+        deltaTime = (double)((NOW - LAST)*1000 / (double)SDL_GetPerformanceFrequency());
+
+
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) running = 0;
             if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) running = 0;
         }
 
-        if (keys[SDL_SCANCODE_W]) camera.z += speed;
-        if (keys[SDL_SCANCODE_S]) camera.z -= speed;
+        if (keys[SDL_SCANCODE_W]) camera.pos.z += camera_speed*deltaTime;
+        if (keys[SDL_SCANCODE_S]) camera.pos.z -= camera_speed*deltaTime;
         
-        if (keys[SDL_SCANCODE_A]) camera.x -= speed;
-        if (keys[SDL_SCANCODE_D]) camera.x += speed;
+        if (keys[SDL_SCANCODE_A]) camera.pos.x -= camera_speed*deltaTime;
+        if (keys[SDL_SCANCODE_D]) camera.pos.x += camera_speed*deltaTime;
         
-        if (keys[SDL_SCANCODE_SPACE])   camera.y -= speed;
-        if (keys[SDL_SCANCODE_LSHIFT]) camera.y += speed;
+        if (keys[SDL_SCANCODE_SPACE]) camera.pos.y -= camera_speed*deltaTime;
+        if (keys[SDL_SCANCODE_LSHIFT]) camera.pos.y += camera_speed*deltaTime;
+
+        if (keys[SDL_SCANCODE_UP]) camera.rot.x -= camera_rotation_speed*deltaTime;
+        if (keys[SDL_SCANCODE_DOWN]) camera.rot.x += camera_rotation_speed*deltaTime;
+
+        if (keys[SDL_SCANCODE_LEFT]) camera.rot.y -= camera_rotation_speed*deltaTime;
+        if (keys[SDL_SCANCODE_RIGHT]) camera.rot.y += camera_rotation_speed*deltaTime;
+
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-        SDL_FPoint screen_points[cube.v_count];
-        float depths[cube.v_count];
+        float cosA = cos(camera.rot.x);
+        float cosT = cos(camera.rot.y);
+        float sinA = sin(camera.rot.x);
+        float sinT = sin(camera.rot.y);
 
-        for (int i = 0; i < cube.v_count; i++)
+        float rotation_matrix[] = {
+            cosT, 0, -sinT, 
+            -sinT*sinA, cosA, -sinA*cosT, 
+            cosA*sinT, sinA, cosA*cosT
+        };
+        matrix H = matrix_init(3, 3, rotation_matrix);
+
+        for (int i = 0; i < model.v_count; i++)
         {
-            float final_x = cube.vertices[i].x - camera.x;
-            float final_y = cube.vertices[i].y - camera.y;
-            float final_z = cube.vertices[i].z - camera.z;
+            vector3 point = {model.vertices[i].x - camera.pos.x, model.vertices[i].y - camera.pos.y, model.vertices[i].z - camera.pos.z};
 
-            if (final_z <= 0.1f) final_z = 0.1f;
+            vec3_matrixmul(&point, H);
 
-            float screenx = final_x*FOV/final_z - 2 + (Win_Width/2);
-            float screeny = final_y*FOV/final_z - 2 + (Win_Height/2);
+            float flat_x = FOV*point.x/point.z;
+            float flat_y = FOV*point.y/point.z;
 
-            screen_points[i].x = screenx;
-            screen_points[i].y = screeny;
-            depths[i] = final_z;
+            flat_x += w-2;
+            flat_y += h-2;
 
-            if (cube.vertices[i].z > camera.z)
-            {SDL_FRect rect = {screenx- 2, screeny - 2, 5, 5};
+            screen_points[i] = (vector2){flat_x, flat_y};
+            depths[i] = point.z;
+
+            if (point.z > 0.1f)
+            {SDL_FRect rect = {flat_x - 2, flat_y - 2, 5, 5};
             SDL_RenderFillRect(renderer, &rect);}
         }
 
-        for (int i = 0; i < cube.f_count; i++)
+        for (int i = 0; i < model.f_count; i++)
         {
-            float x1 = screen_points[cube.faces[i].a].x;
-            float y1 = screen_points[cube.faces[i].a].y;
+            float x1 = screen_points[model.faces[i].a].x;
+            float y1 = screen_points[model.faces[i].a].y;
 
-            float x2 = screen_points[cube.faces[i].b].x;
-            float y2 = screen_points[cube.faces[i].b].y; 
+            float x2 = screen_points[model.faces[i].b].x;
+            float y2 = screen_points[model.faces[i].b].y; 
 
-            float x3 = screen_points[cube.faces[i].c].x;
-            float y3 = screen_points[cube.faces[i].c].y; 
+            float x3 = screen_points[model.faces[i].c].x;
+            float y3 = screen_points[model.faces[i].c].y; 
             
-            SDL_RenderLine(renderer, x1, y1, x2, y2);
-            SDL_RenderLine(renderer, x2, y2, x3, y3);
-            SDL_RenderLine(renderer, x3, y3, x1, y1);
+            if (depths[model.faces[i].a] > 0 && depths[model.faces[i].b] > 0) SDL_RenderLine(renderer, x1, y1, x2, y2);
+            if (depths[model.faces[i].b] > 0 && depths[model.faces[i].c] > 0) SDL_RenderLine(renderer, x2, y2, x3, y3);
+            if (depths[model.faces[i].c] > 0 && depths[model.faces[i].a] > 0) SDL_RenderLine(renderer, x3, y3, x1, y1);
         }
-        
+
+        free_matrix(H);
 
         SDL_RenderPresent(renderer);
     }
